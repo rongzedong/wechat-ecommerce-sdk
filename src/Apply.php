@@ -5,6 +5,12 @@ namespace jiujiude\WechatEcommerce;
 /** 商户进件与结算账户操作。 */
 class Apply
 {
+    /**
+     * 提交商户进件信息。
+     * 对敏感字段（身份证号、银行账号等）按 APIv3 要求加密后提交。
+     * @param array $param 进件参数
+     * @return string 微信支付接口响应
+     */
     public function applyment($param = [])
     {
         $url = 'https://api.mch.weixin.qq.com/v3/ecommerce/applyments/';
@@ -28,6 +34,11 @@ class Apply
         return Signs::_Postresponse($url, json_encode($param, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     }
 
+    /**
+     * 根据进件申请编号查询进件结果。
+     * @param string $applyment_id 申请编号
+     * @return string 微信支付接口响应
+     */
     public function getApplymentByid($applyment_id)
     {
         $url = 'https://api.mch.weixin.qq.com/v3/ecommerce/applyments/' . rawurlencode((string) $applyment_id);
@@ -42,6 +53,11 @@ class Apply
         return json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
 
+    /**
+     * 根据商户申请单号查询进件结果。
+     * @param string $out_request_no 商户申请单号
+     * @return string 微信支付接口响应
+     */
     public function getApplymentByno($out_request_no)
     {
         $url = 'https://api.mch.weixin.qq.com/v3/ecommerce/applyments/out-request-no/' . rawurlencode((string) $out_request_no);
@@ -56,6 +72,11 @@ class Apply
         return json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
 
+    /**
+     * 修改商户结算账户信息。
+     * @param array $param 结算账户参数
+     * @return string 微信支付接口响应
+     */
     public function modifySettlement($param = [])
     {
         if (empty($param['sub_mchid']) || strlen((string) $param['sub_mchid']) < 8) {
@@ -79,6 +100,11 @@ class Apply
         return Signs::_Postresponse($url, json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     }
 
+    /**
+     * 查询结算账户信息。
+     * @param string $sub_mchid 特约商户号
+     * @return string 微信支付接口响应
+     */
     public function getSettlement($sub_mchid)
     {
         if (strlen((string) $sub_mchid) < 8) {
@@ -88,6 +114,11 @@ class Apply
         return Signs::_Getresponse($url);
     }
 
+    /**
+     * 提交特约商户进件信息。
+     * @param array $param 特约商户进件参数
+     * @return string 微信支付接口响应
+     */
     public function applymentTY($param = [])
     {
         $url = 'https://api.mch.weixin.qq.com/v3/applyment4sub/applyment/';
@@ -120,18 +151,33 @@ class Apply
         return Signs::_Postresponse($url, json_encode($param, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     }
 
+    /**
+     * 根据特约商户申请编号查询进件结果。
+     * @param string $applyment_id 进件编号
+     * @return string 微信支付接口响应
+     */
     public function getApplymentByidTY($applyment_id)
     {
         $url = 'https://api.mch.weixin.qq.com/v3/applyment4sub/applyment/applyment_id/' . rawurlencode((string) $applyment_id);
         return Signs::_Getresponse($url);
     }
 
+    /**
+     * 根据业务代码查询特约商户进件结果。
+     * @param string $business_code 商户业务代码
+     * @return string 微信支付接口响应
+     */
     public function getApplymentBynoTY($business_code)
     {
         $url = 'https://api.mch.weixin.qq.com/v3/applyment4sub/applyment/business_code/' . rawurlencode((string) $business_code);
         return Signs::_Getresponse($url);
     }
 
+    /**
+     * 修改特约商户结算账户信息。
+     * @param array $post 结算账户参数
+     * @return string 微信支付接口响应
+     */
     public function modifySettlementTY($post = [])
     {
         $subMchid = $post['sub_mchid'] ?? '';
@@ -154,6 +200,11 @@ class Apply
         return Signs::_Postresponse($url, json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     }
 
+    /**
+     * 查询特约商户结算账户信息。
+     * @param string $sub_mchid 特约商户号
+     * @return string 微信支付接口响应
+     */
     public function findSettlementTY($sub_mchid)
     {
         $url = 'https://api.mch.weixin.qq.com/v3/apply4sub/sub_merchants/' . rawurlencode((string) $sub_mchid) . '/settlement';
