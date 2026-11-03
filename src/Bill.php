@@ -2,8 +2,16 @@
 
 namespace jiujiude\WechatEcommerce;
 
+/** 交易账单与资金账单查询接口。 */
 class Bill
 {
+    /**
+     * 查询商户资金余额。支持按账户类型查询基础账户、运营账户或手续费账户。
+     * @param int|string $fund_type 1：查询余额，2：查询日终余额
+     * @param string $account_type 账户类型：BASIC / OPERATION / FEES
+     * @param string $date 账单日期，格式 YYYY-MM-DD，仅 fund_type=2 时使用
+     * @return string 微信支付接口响应
+     */
     public function getComBalance($fund_type = 1, $account_type = 'BASIC', $date = '')
     {
         if (!in_array($account_type, ['BASIC', 'OPERATION', 'FEES'], true)) {
@@ -20,6 +28,13 @@ class Bill
         return Signs::_Getresponse($url);
     }
 
+    /**
+     * 查询二级商户资金余额。
+     * @param string $sub_mchid 二级商户号
+     * @param int|string $fund_type 1：查询余额，2：查询日终余额
+     * @param string $date 账单日期，格式 YYYY-MM-DD，仅 fund_type=2 时使用
+     * @return string 微信支付接口响应
+     */
     public function getShopBalance($sub_mchid, $fund_type = 1, $date = '')
     {
         if ($sub_mchid === '' || $sub_mchid === null) {
@@ -37,6 +52,15 @@ class Bill
         return Signs::_Getresponse($url);
     }
 
+    /**
+     * 下载交易账单并保存到指定目录。
+     * @param string $filepath 保存目录
+     * @param string $bill_date 账单日期，格式 YYYY-MM-DD
+     * @param string $sub_mchid 二级商户号，可选
+     * @param string $bill_type 账单类型，默认 ALL
+     * @param string $tar_type 账单压缩类型，可选
+     * @return string|array 成功返回保存文件名，否则返回接口错误数组
+     */
     public function tradeBill($filepath, $bill_date, $sub_mchid = '', $bill_type = 'ALL', $tar_type = '')
     {
         $query = [
@@ -61,6 +85,13 @@ class Bill
         return $file;
     }
 
+    /**
+     * 将账单内容保存到本地文件，并在可用时校验文件摘要。
+     * @param array $data 下载链接等返回数据
+     * @param string $name 文件名前缀
+     * @param string $filepath 保存目录
+     * @return string|bool 成功返回文件名，失败返回 false
+     */
     private function saveBillFile($data, $name, $filepath)
     {
         if (empty($data['download_url'])) {
@@ -79,7 +110,7 @@ class Bill
         if (file_put_contents($target, $content, LOCK_EX) === false) {
             return false;
         }
-        // Verify the downloaded bill against the API response digest when present.
+        // 当接口返回摘要信息时，校验下载文件是否被篡改。
         if (!empty($data[' hash_type']) && !empty($data['hash_value'])) {
             $algorithm = strtolower((string) $data[' hash_type']);
             if (in_array($algorithm, hash_algos(), true) && hash_file($algorithm, $target) !== strtolower((string) $data['hash_value'])) {
@@ -90,6 +121,14 @@ class Bill
         return $file;
     }
 
+    /**
+     * 下载资金账单并保存到指定目录。
+     * @param string $filepath 保存目录
+     * @param string $bill_date 账单日期，格式 YYYY-MM-DD
+     * @param string $account_type 账户类型，默认 BASIC
+     * @param string $tar_type 账单压缩类型，可选
+     * @return string|array 成功返回保存���件名，否则返回接口错误数组
+     */
     public function fundBill($filepath, $bill_date, $account_type = 'BASIC', $tar_type = '')
     {
         $query = ['bill_date' => (string) $bill_date];
