@@ -5,6 +5,14 @@ namespace jiujiude\WechatEcommerce;
 use WeChatPay\Crypto\Rsa;
 use WeChatPay\Formatter;
 
+/** 验证并解密微信支付 APIv3 回调通知。 */
+class Notify
+{
+    /**
+     * 处理支付成功通知。
+     * @param string $jsonData 通知原始 JSON 字符串
+     * @param array $headers HTTP 头信息
+     * @return string 解密后的资源对象内容
 /**
  * 验证并解密微信支付 APIv3 回调通知。
  * 处理支付成功通知、退款成功通知等加密回调消息，并在校验签名后解密资源内容。
@@ -23,6 +31,10 @@ class Notify
     }
 
     /**
+     * 处理退款成功通知。
+     * @param string $jsonData 通知原始 JSON 字符串
+     * @param array $headers HTTP 头信息
+     * @return string 解密后的资源对象内容
      * 处理退款成功回调通知。
      * @param string $jsonData 原始回调通知 JSON 字符串
      * @param array $headers HTTP 请求头信息
@@ -34,6 +46,10 @@ class Notify
     }
 
     /**
+     * 统一处理支付/退款通知，校验签名并��密资源字段。
+     * @param string $jsonData 通知原始 JSON 字符串
+     * @param array $headers HTTP 头信息
+     * @param string $eventType 期望的通知事件类型
      * 通用回调处理入口，校验通知类型、签名及加密字段，并解密资源内容。
      * @param string $jsonData 原始回调通知 JSON 字符串
      * @param array $headers HTTP 请求头信息
@@ -68,6 +84,11 @@ class Notify
     }
 
     /**
+     * 验证回调签名，确保签名、时间戳和证书序列号均匹配。
+     * 允许同时处理 PHP $_SERVER 头和标准 HTTP 头名称。
+     * @param string $body 原始回调请求体
+     * @param array $headers HTTP 头信息
+     * @return bool 是否校验通过
      * 验证微信支付回调签名，确保通知未被篡改、时间戳有效且使用正确平台证书。
      * 同时兼容 PHP $_SERVER 风格头部名和标准 HTTP 头部名。
      * @param string $body 原始回调请求体
@@ -97,6 +118,7 @@ class Notify
     }
 
     /**
+     * 标准化头信息名称，兼容 PHP $_SERVER 和标准头名称。
      * 标准化回调头信息，兼容 PHP 的 $_SERVER 头名和标准 HTTP 头名。
      * @param array $headers 原始头信息
      * @return array 标准化后的头信息

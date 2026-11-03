@@ -2,12 +2,14 @@
 
 namespace jiujiude\WechatEcommerce;
 
-/** Download, decrypt and cache APIv3 platform certificates. */
+/** 下载、解密并缓存微信支付 APIv3 平台证书。 */
 class Cert
 {
     /**
-     * Refresh the local platform certificate cache when necessary.
-     * Returns the active certificate serial for backwards compatibility.
+     * 刷新并返回当前可用的平台证书序列号。
+     * 当本地缓存无效或过期时，会重新拉取平台证书并更新缓存。
+     * @param string|null $serialNo 目标证书序列号；传入时仅校验并返回该序列号
+     * @return string 当前有效的证书序列号
      */
     public static function certificates($serialNo = null)
     {
@@ -24,7 +26,7 @@ class Cert
 
         if ($serialNo !== null) {
             if (!isset($cache['certificates'][$serialNo])) {
-                // A notification can use a certificate rotated since the last cache refresh.
+                // 通知回调可能使用缓存更新后已轮换的证书序列号，此时需重新拉取。
                 $cache = self::download($cachePath, $certificatePath);
             }
             if (!isset($cache['certificates'][$serialNo])) {
@@ -39,7 +41,11 @@ class Cert
         return $cache['active_serial'];
     }
 
-    /** Load the platform certificate matching a webhook Wechatpay-Serial. */
+    /**
+     * 根据 webhook 请求头中的 Wechatpay-Serial 获取对应平台证书内容。
+     * @param string $serialNo 平台证书序列号
+     * @return resource 平台证书对象
+     */
     public static function certificateForSerial($serialNo)
     {
         self::certificates($serialNo);
@@ -48,6 +54,11 @@ class Cert
         return Signs::getCertificate($path);
     }
 
+    /**
+     * 读取缓存文件中的平台证书索引。
+     * @param string $path 缓存文件路径
+     * @return array 已缓存的平台证书信息
+     */
     private static function readCache($path)
     {
         if (!is_file($path) || !is_readable($path)) {
@@ -57,6 +68,11 @@ class Cert
         return is_array($cache) ? $cache : [];
     }
 
+    /**
+     * 判断缓存是否可用，并检查每个证书文件都存在且可读。
+     * @param array $cache 证书缓存信息
+     * @return bool 是否可用
+     */
     private static function cacheIsUsable($cache)
     {
         if (empty($cache['certificates']) || empty($cache['expires_at']) || time() >= $cache['expires_at']) {
@@ -70,6 +86,12 @@ class Cert
         return true;
     }
 
+    /**
+     * 从微信支付平台拉取最新平台证书并写入缓存。
+     * @param string $cachePath 缓存索引文件路径
+     * @param string $certificatePath 证书文件根路径
+     * @return array 新的缓存数组
+     */
     private static function download($cachePath, $certificatePath)
     {
         $response = json_decode(Signs::_Getresponse('https://api.mch.weixin.qq.com/v3/certificates'), true);
@@ -92,7 +114,7 @@ class Cert
             $serial = preg_replace('/[^A-Za-z0-9._-]/', '_', $item['serial_no']);
             $path = $certificatePath . '.' . $serial . '.pem';
             self::writeFile($path, $pem);
-            // Keep the configured legacy location populated with the active certificate.
+            // 保持兼容老配置项：将当前有效证书写入 legacy 路径。
             if (empty($certificates)) {
                 self::writeFile($certificatePath, $pem);
             }
@@ -116,6 +138,11 @@ class Cert
         return $cache;
     }
 
+    /**
+     * 将证书内容写入本地文件。
+     * @param string $path 文件路径
+     * @param string $contents 证书内容
+     */
     private static function writeFile($path, $contents)
     {
         $directory = dirname($path);
