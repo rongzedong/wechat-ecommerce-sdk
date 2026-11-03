@@ -13,6 +13,17 @@ class Notify
      * @param string $jsonData 通知原始 JSON 字符串
      * @param array $headers HTTP 头信息
      * @return string 解密后的资源对象内容
+/**
+ * 验证并解密微信支付 APIv3 回调通知。
+ * 处理支付成功通知、退款成功通知等加密回调消息，并在校验签名后解密资源内容。
+ */
+class Notify
+{
+    /**
+     * 处理支付成功回调通知。
+     * @param string $jsonData 原始回调通知 JSON 字符串
+     * @param array $headers HTTP 请求头信息
+     * @return string 解密后的通知资源内容
      */
     public function notifyPay($jsonData, $headers = [])
     {
@@ -24,6 +35,10 @@ class Notify
      * @param string $jsonData 通知原始 JSON 字符串
      * @param array $headers HTTP 头信息
      * @return string 解密后的资源对象内容
+     * 处理退款成功回调通知。
+     * @param string $jsonData 原始回调通知 JSON 字符串
+     * @param array $headers HTTP 请求头信息
+     * @return string 解密后的通知资源内容
      */
     public function notifyRefund($jsonData, $headers = [])
     {
@@ -35,6 +50,10 @@ class Notify
      * @param string $jsonData 通知原始 JSON 字符串
      * @param array $headers HTTP 头信息
      * @param string $eventType 期望的通知事件类型
+     * 通用回调处理入口，校验通知类型、签名及加密字段，并解密资源内容。
+     * @param string $jsonData 原始回调通知 JSON 字符串
+     * @param array $headers HTTP 请求头信息
+     * @param string $eventType 期望事件类型（如 TRANSACTION.SUCCESS / REFUND.SUCCESS）
      * @return string 解密后的资源内容
      */
     private function notify($jsonData, $headers, $eventType)
@@ -70,6 +89,11 @@ class Notify
      * @param string $body 原始回调请求体
      * @param array $headers HTTP 头信息
      * @return bool 是否校验通过
+     * 验证微信支付回调签名，确保通知未被篡改、时间戳有效且使用正确平台证书。
+     * 同时兼容 PHP $_SERVER 风格头部名和标准 HTTP 头部名。
+     * @param string $body 原始回调请求体
+     * @param array $headers HTTP 请求头信息
+     * @return bool 签名校验是否通过
      */
     public function Verify($body, $headers = [])
     {
@@ -95,14 +119,15 @@ class Notify
 
     /**
      * 标准化头信息名称，兼容 PHP $_SERVER 和标准头名称。
+     * 标准化回调头信息，兼容 PHP 的 $_SERVER 头名和标准 HTTP 头名。
      * @param array $headers 原始头信息
      * @return array 标准化后的头信息
      */
     private function normalizeHeaders($headers)
     {
         $normalized = [];
-        foreach ((array) $headers as $name => $value) {
-            $name = strtolower(str_replace('_', '-', preg_replace('/^HTTP_/i', '', (string) $name)));
+        foreach ((array) $headers as $value) {
+            $name = strtolower(str_replace('_', '-', preg_replace('/^HTTP_/i', '', (string) $value)));
             $normalized[$name] = is_array($value) ? (string) reset($value) : (string) $value;
         }
         return $normalized;
