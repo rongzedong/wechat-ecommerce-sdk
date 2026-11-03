@@ -5,19 +5,38 @@ namespace jiujiude\WechatEcommerce;
 use WeChatPay\Crypto\Rsa;
 use WeChatPay\Formatter;
 
-/** Verify and decrypt WeChat Pay APIv3 webhook notifications. */
+/** 验证并解密微信支付 APIv3 回调通知。 */
 class Notify
 {
+    /**
+     * 处理支付成功通知。
+     * @param string $jsonData 通知原始 JSON 字符串
+     * @param array $headers HTTP 头信息
+     * @return string 解密后的资源对象内容
+     */
     public function notifyPay($jsonData, $headers = [])
     {
         return $this->notify($jsonData, $headers, 'TRANSACTION.SUCCESS');
     }
 
+    /**
+     * 处理退款成功通知。
+     * @param string $jsonData 通知原始 JSON 字符串
+     * @param array $headers HTTP 头信息
+     * @return string 解密后的资源对象内容
+     */
     public function notifyRefund($jsonData, $headers = [])
     {
         return $this->notify($jsonData, $headers, 'REFUND.SUCCESS');
     }
 
+    /**
+     * 统一处理支付/退款通知，校验签名并��密资源字段。
+     * @param string $jsonData 通知原始 JSON 字符串
+     * @param array $headers HTTP 头信息
+     * @param string $eventType 期望的通知事件类型
+     * @return string 解密后的资源内容
+     */
     private function notify($jsonData, $headers, $eventType)
     {
         if (!is_string($jsonData) || $jsonData === '') {
@@ -46,8 +65,11 @@ class Notify
     }
 
     /**
-     * Verify the exact raw notification body and reject stale/replayed timestamps.
-     * Both PHP $_SERVER names and canonical HTTP header names are accepted.
+     * 验证回调签名，确保签名、时间戳和证书序列号均匹配。
+     * 允许同时处理 PHP $_SERVER 头和标准 HTTP 头名称。
+     * @param string $body 原始回调请求体
+     * @param array $headers HTTP 头信息
+     * @return bool 是否校验通过
      */
     public function Verify($body, $headers = [])
     {
@@ -71,6 +93,11 @@ class Notify
         }
     }
 
+    /**
+     * 标准化头信息名称，兼容 PHP $_SERVER 和标准头名称。
+     * @param array $headers 原始头信息
+     * @return array 标准化后的头信息
+     */
     private function normalizeHeaders($headers)
     {
         $normalized = [];
@@ -81,7 +108,10 @@ class Notify
         return $normalized;
     }
 
-    /** Return request headers in canonical names. */
+    /**
+     * 返回当前请求的 HTTP 头信息，保留标准命名风格。
+     * @return array 头信息数组
+     */
     public function em_getallheaders()
     {
         if (function_exists('getallheaders')) {
