@@ -2,71 +2,143 @@
 
 namespace jiujiude\WechatEcommerce;
 
-//商户提现
-class Withdraw
+class Pay
 {
-    /**
-     * 二级商户余额提现
-     * @param $sub_mchid
-     * @param $out_request_no
-     * @param $amount
-     * @param string $remark
-     * @param string $bank_memo
-     * @param string $account_type
-     * @return bool|string
-     */
-    public function fundWithdraw(
-        $sub_mchid,
-        $out_request_no,
-        $amount,
-        $remark = '交易提现',
-        $bank_memo = '',
-        $account_type = ''
-    ) {
-        $url = 'https://api.mch.weixin.qq.com/v3/ecommerce/fund/withdraw';
-        $data = [
-            'sub_mchid' => strval($sub_mchid), //二级商户号
-            'out_request_no' => $out_request_no,
-            'amount' => $amount,
-            'remark' => $remark,
-            'bank_memo' => $bank_memo,
-            'account_type' => $account_type,
+    public function closingOrderJsapi($combine_out_trade_no, $sub_orders, $openid)
+    {
+        $url = 'https://api.mch.weixin.qq.com/v3/combine-transactions/jsapi';
+        $orders = [];
+        foreach ($sub_orders as $order) {
+            $orders[] = [
+                'mchid' => Config::$config['MCHID'],
+                'attach' => $order['attach'] ?? '',
+                'out_trade_no' => $order['out_trade_no'] ?? '',
+                'sub_mchid' => strval($order['sub_mchid'] ?? ''),
+                'description' => $order['description'] ?? '',
+                'amount' => [
+                    'total_amount' => $order['total_amount'] ?? 0,
+                    'currency' => 'CNY',
+                ],
+                'settle_info' => [
+                    'profit_sharing' => $order['profit_sharing_settle'] ?? false,
+                ],
+            ];
+        }
+        $paramData = [
+            'combine_appid' => Config::$config['PUB']['COMBINE_APPID'] ?? Config::$config['COMBINE_APPID'],
+            'combine_mchid' => Config::$config['COMBINE_MCHID'],
+            'combine_out_trade_no' => $combine_out_trade_no,
+            'sub_orders' => $orders,
+            'combine_payer_info' => [
+                'openid' => $openid,
+            ],
+            'notify_url' => Config::$config['PAY_NOTIFY_URL'],
         ];
-        if (empty($data['bank_memo'])) {
-            unset($data['bank_memo']);
+        if (empty($openid)) {
+            unset($paramData['combine_payer_info']);
         }
-        if (empty($data['account_type'])) {
-            unset($data['account_type']);
-        }
-        $data = json_encode($data);
-        return Signs::_Postresponse($url, $data);
+        return Signs::_Postresponse($url, json_encode($paramData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     }
 
-    /**
-     * 查询提现状态 微信支付提现单号查询
-     * @param $sub_mchid
-     * @param $withdraw_id
-     * @return bool|string
-     */
-    public function getWithdrawByid($sub_mchid, $withdraw_id)
+    public function closingOrderApp($combine_out_trade_no, $sub_orders)
     {
-        $url = 'https://api.mch.weixin.qq.com/v3/ecommerce/fund/withdraw/' . $withdraw_id . '?sub_mchid=' . $sub_mchid;
-        $body = '';
-        $ret = Signs::_Getresponse($url, $body);
-        return $ret;
+        $url = 'https://api.mch.weixin.qq.com/v3/combine-transactions/app';
+        $orders = [];
+        foreach ($sub_orders as $order) {
+            $orders[] = [
+                'mchid' => Config::$config['MCHID'],
+                'attach' => $order['attach'] ?? '',
+                'out_trade_no' => $order['out_trade_no'] ?? '',
+                'sub_mchid' => strval($order['sub_mchid'] ?? ''),
+                'description' => $order['description'] ?? '',
+                'amount' => [
+                    'total_amount' => $order['total_amount'] ?? 0,
+                    'currency' => 'CNY',
+                ],
+                'settle_info' => [
+                    'profit_sharing' => $order['profit_sharing_settle'] ?? false,
+                ],
+            ];
+        }
+        $paramData = [
+            'combine_appid' => Config::$config['APP']['COMBINE_APPID'] ?? Config::$config['COMBINE_APPID'],
+            'combine_mchid' => Config::$config['COMBINE_MCHID'],
+            'combine_out_trade_no' => $combine_out_trade_no,
+            'sub_orders' => $orders,
+            'notify_url' => Config::$config['PAY_NOTIFY_URL'],
+        ];
+        return Signs::_Postresponse($url, json_encode($paramData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     }
 
-    /**
-     * 查询提现状态 商户提现单号查询
-     * @param $sub_mchid
-     * @param $out_request_no
-     * @return bool|string
-     */
-    public function getWithdrawByno($sub_mchid, $out_request_no)
+    public function appPay($prepay_id)
     {
-        $url = 'https://api.mch.weixin.qq.com/v3/ecommerce/fund/withdraw/out-request-no/' . $out_request_no . '?sub_mchid=' . $sub_mchid;
-        $body = '';
-        $ret = Signs::_Getresponse($url, $body);
-        return $ret;
+        $appid = Config::$config['APP']['COMBINE_APPID'] ?? Config::$config['COMBINE_APPID'];
+        return Signs::_PayAppJson($appid, $prepay_id);
+    }
+
+    public function jsPay($prepay_id)
+    {
+        $appid = Config::$config['PUB']['COMBINE_APPID'] ?? Config::$config['COMBINE_APPID'];
+        return Signs::_PayJson($appid, $prepay_id);
+    }
+
+    public function xcxPay($prepay_id)
+    {
+        $appid = Config::$config['XCX']['COMBINE_APPID'] ?? Config::$config['COMBINE_APPID'];
+        return Signs::_PayJson($appid, $prepay_id);
+    }
+
+    public function findorder($combine_out_trade_no)
+    {
+        $url = 'https://api.mch.weixin.qq.com/v3/combine-transactions/out-trade-no/' . rawurlencode((string) $combine_out_trade_no);
+        return Signs::_Getresponse($url);
+    }
+
+    public function closeorder($combine_out_trade_no, $orders)
+    {
+        $url = 'https://api.mch.weixin.qq.com/v3/combine-transactions/out-trade-no/' . rawurlencode((string) $combine_out_trade_no) . '/close';
+        $data = [
+            'combine_appid' => Config::$config['COMBINE_APPID'],
+            'sub_orders' => $orders,
+        ];
+        return Signs::_Postresponse($url, json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    }
+
+    public function applyRefund($sub_mchid, $out_refund_no, $transaction_id, $refund_fee, $total_fee, $reason = '', $out_trade_no = '')
+    {
+        $post = [
+            'sub_mchid' => strval($sub_mchid),
+            'sp_appid' => Config::$config['COMBINE_APPID'],
+            'transaction_id' => $transaction_id,
+            'out_trade_no' => $out_trade_no,
+            'out_refund_no' => strval($out_refund_no),
+            'reason' => $reason,
+            'amount' => [
+                'refund' => $refund_fee,
+                'total' => $total_fee,
+                'currency' => 'CNY',
+            ],
+            'notify_url' => Config::$config['REFUND_NOTIFY_URL'],
+        ];
+        if ($out_trade_no === '') {
+            unset($post['out_trade_no']);
+        }
+        if ($reason === '') {
+            unset($post['reason']);
+        }
+        $url = 'https://api.mch.weixin.qq.com/v3/ecommerce/refunds/apply';
+        return Signs::_Postresponse($url, json_encode($post, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    }
+
+    public function findRefund($sub_mchid, $refund_id = '', $out_refund_no = '')
+    {
+        $url = 'https://api.mch.weixin.qq.com/v3/ecommerce/refunds/';
+        if ($refund_id !== '') {
+            $url .= 'id/' . rawurlencode((string) $refund_id);
+        } else {
+            $url .= 'out-refund-no/' . rawurlencode((string) $out_refund_no);
+        }
+        $url .= '?sub_mchid=' . rawurlencode((string) $sub_mchid);
+        return Signs::_Getresponse($url);
     }
 }
