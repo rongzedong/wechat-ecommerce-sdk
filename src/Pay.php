@@ -2,98 +2,130 @@
 
 namespace jiujiude\WechatEcommerce;
 
-class Bill
+class Pay
 {
-    public function getComBalance($fund_type = 1, $account_type = 'BASIC', $date = '')
+    private function buildSubOrders($sub_orders)
     {
-        if (!in_array($account_type, ['BASIC', 'OPERATION', 'FEES'], true)) {
-            throw new WxPayv3Exception('查询的账户类型不存在');
+        $orders = [];
+        foreach ($sub_orders as $order) {
+            $subOrder = [
+                'mchid' => Config::$config['MCHID'],
+                'out_trade_no' => $order['out_trade_no'] ?? '',
+                'sub_mchid' => (string) ($order['sub_mchid'] ?? ''),
+                'description' => $order['description'] ?? '',
+                'amount' => [
+                    'total_amount' => $order['total_amount'] ?? 0,
+                    'currency' => $order['currency'] ?? 'CNY',
+                ],
+            ];
+            if (isset($order['attach']) && $order['attach'] !== '') {
+                $subOrder['attach'] = $order['attach'];
+            }
+            if (isset($order['profit_sharing_settle'])) {
+                $subOrder['settle_info'] = ['profit_sharing' => (bool) $order['profit_sharing_settle']];
+            }
+            if (isset($order['detail'])) {
+                $subOrder['detail'] = $order['detail'];
+            }
+            $orders[] = $subOrder;
         }
-        switch ($fund_type) {
-            case 1:
-                $http_url = 'https://api.mch.weixin.qq.com/v3/merchant/fund/balance/' . $account_type;
-                break;
-            case 2:
-                $date = $date ?: date('Y-m-d');
-                $http_url = 'https://api.mch.weixin.qq.com/v3/merchant/fund/dayendbalance/' . $account_type . '?date=' . urlencode($date);
-                break;
-            default:
-                throw new WxPayv3Exception('请求路径错误');
-        }
-        return Signs::_Getresponse($http_url);
+        return $orders;
     }
 
-    public function getShopBalance($sub_mchid, $fund_type = 1, $date = '')
+    public function closingOrderJsapi($combine_out_trade_no, $sub_orders, $openid)
     {
-        if (empty($sub_mchid)) {
-            throw new WxPayv3Exception('查询的二级商户不能为空');
+        $paramData = [
+            'combine_appid' => Config::$config['PUB']['COMBINE_APPID'] ?? Config::$config['COMBINE_APPID'],
+            'combine_mchid' => Config::$config['COMBINE_MCHID'],
+            'combine_out_trade_no' => $combine_out_trade_no,
+            'sub_orders' => $this->buildSubOrders($sub_orders),
+            'notify_url' => Config::$config['PAY_NOTIFY_URL'],
+        ];
+        if ($openid !== '') {
+            $paramData['combine_payer_info'] = ['openid' => $openid];
         }
-        switch ($fund_type) {
-            case 1:
-                $http_url = 'https://api.mch.weixin.qq.com/v3/ecommerce/fund/balance/' . rawurlencode((string) $sub_mchid);
-                break;
-            case 2:
-                $date = $date ?: date('Y-m-d');
-                $http_url = 'https://api.mch.weixin.qq.com/v3/ecommerce/fund/enddaybalance/' . rawurlencode((string) $sub_mchid) . '?date=' . urlencode($date);
-                break;
-            default:
-                throw new WxPayv3Exception('请求路径错误');
-        }
-        return Signs::_Getresponse($http_url);
+        return Signs::_Postresponse(
+            'https://api.mch.weixin.qq.com/v3/combine-transactions/jsapi',
+            json_encode($paramData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+        );
     }
 
-    public function tradeBill($filepath, $bill_date, $sub_mchid = '', $bill_type = 'ALL', $tar_type = '')
+    public function closingOrderApp($combine_out_trade_no, $sub_orders)
     {
-        $url = 'https://api.mch.weixin.qq.com/v3/bill/tradebill?bill_date=' . urlencode((string) $bill_date);
-        if ($sub_mchid !== '') {
-            $url .= '&sub_mchid=' . rawurlencode((string) $sub_mchid);
-        }
-        $url .= '&bill_type=' . urlencode((string) $bill_type);
-        if ($tar_type !== '') {
-            $url .= '&tar_type=' . urlencode((string) $tar_type);
-        }
-        $ret = json_decode(Signs::_Getresponse($url), true);
-        if (!is_array($ret) || isset($ret['code'])) {
-            return $ret;
-        }
-        $down = $this->saveBillFile($ret, '交易账单_' . $bill_type, $filepath);
-        if ($down) {
-            return $down;
-        }
-        throw new WxPayv3Exception('下载出错');
+        $paramData = [
+            'combine_appid' => Config::$config['APP']['COMBINE_APPID'] ?? Config::$config['COMBINE_APPID'],
+            'combine_mchid' => Config::$config['COMBINE_MCHID'],
+            'combine_out_trade_no' => $combine_out_trade_no,
+            'sub_orders' => $this->buildSubOrders($sub_orders),
+            'notify_url' => Config::$config['PAY_NOTIFY_URL'],
+        ];
+        return Signs::_Postresponse(
+            'https://api.mch.weixin.qq.com/v3/combine-transactions/app',
+            json_encode($paramData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+        );
     }
 
-    private function saveBillFile($data, $name, $filepath)
+    public function appPay($prepay_id)
     {
-        $url = $data['download_url'] ?? '';
-        if ($url === '') {
-            return false;
-        }
-        $ret = Signs::_Getresponse($url);
-        $file = $name . '_' . date('YmdHIs') . '.xlsx';
-        if (file_put_contents(rtrim($filepath, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $file, $ret) === false) {
-            return false;
-        }
-        return $file;
+        return Signs::_PayAppJson(Config::$config['APP']['COMBINE_APPID'] ?? Config::$config['COMBINE_APPID'], $prepay_id);
     }
 
-    public function fundBill($filepath, $bill_date, $account_type = 'BASIC', $tar_type = '')
+    public function jsPay($prepay_id)
     {
-        $url = 'https://api.mch.weixin.qq.com/v3/bill/fundflowbill?bill_date=' . urlencode((string) $bill_date);
-        if ($account_type !== '') {
-            $url .= '&account_type=' . urlencode((string) $account_type);
+        return Signs::_PayJson(Config::$config['PUB']['COMBINE_APPID'] ?? Config::$config['COMBINE_APPID'], $prepay_id);
+    }
+
+    public function xcxPay($prepay_id)
+    {
+        return Signs::_PayJson(Config::$config['XCX']['COMBINE_APPID'] ?? Config::$config['COMBINE_APPID'], $prepay_id);
+    }
+
+    public function findorder($combine_out_trade_no)
+    {
+        $url = 'https://api.mch.weixin.qq.com/v3/combine-transactions/out-trade-no/' . rawurlencode((string) $combine_out_trade_no);
+        return Signs::_Getresponse($url);
+    }
+
+    public function closeorder($combine_out_trade_no, $orders)
+    {
+        $data = [
+            'combine_appid' => Config::$config['COMBINE_APPID'],
+            'sub_orders' => $orders,
+        ];
+        $url = 'https://api.mch.weixin.qq.com/v3/combine-transactions/out-trade-no/' . rawurlencode((string) $combine_out_trade_no) . '/close';
+        return Signs::_Postresponse($url, json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    }
+
+    public function applyRefund($sub_mchid, $out_refund_no, $transaction_id, $refund_fee, $total_fee, $reason = '', $out_trade_no = '')
+    {
+        $post = [
+            'sub_mchid' => (string) $sub_mchid,
+            'sp_appid' => Config::$config['COMBINE_APPID'],
+            'transaction_id' => $transaction_id,
+            'out_refund_no' => (string) $out_refund_no,
+            'amount' => [
+                'refund' => (int) $refund_fee,
+                'total' => (int) $total_fee,
+                'currency' => 'CNY',
+            ],
+            'notify_url' => Config::$config['REFUND_NOTIFY_URL'],
+        ];
+        if ($out_trade_no !== '') {
+            $post['out_trade_no'] = $out_trade_no;
         }
-        if ($tar_type !== '') {
-            $url .= '&tar_type=' . urlencode((string) $tar_type);
+        if ($reason !== '') {
+            $post['reason'] = $reason;
         }
-        $ret = json_decode(Signs::_Getresponse($url), true);
-        if (!is_array($ret) || isset($ret['code'])) {
-            return $ret;
-        }
-        $down = $this->saveBillFile($ret, '资金账单_' . $account_type, $filepath);
-        if ($down) {
-            return $down;
-        }
-        throw new WxPayv3Exception('下载出错');
+        return Signs::_Postresponse(
+            'https://api.mch.weixin.qq.com/v3/ecommerce/refunds/apply',
+            json_encode($post, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+        );
+    }
+
+    public function findRefund($sub_mchid, $refund_id = '', $out_refund_no = '')
+    {
+        $identifier = $refund_id !== '' ? 'id/' . rawurlencode((string) $refund_id) : 'out-refund-no/' . rawurlencode((string) $out_refund_no);
+        $url = 'https://api.mch.weixin.qq.com/v3/ecommerce/refunds/' . $identifier . '?sub_mchid=' . rawurlencode((string) $sub_mchid);
+        return Signs::_Getresponse($url);
     }
 }

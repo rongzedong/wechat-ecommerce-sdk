@@ -2,109 +2,161 @@
 
 namespace jiujiude\WechatEcommerce;
 
-/**
- * 分账功能
- */
-class Account
+/** 商户进件与结算账户操作。 */
+class Apply
 {
-    public function addReceivers($type, $account, $name, $relation_type = 'SERVICE_PROVIDER')
+    public function applyment($param = [])
     {
-        $url = 'https://api.mch.weixin.qq.com/v3/ecommerce/profitsharing/receivers/add';
-        $post = [
-            'appid' => Config::$config['COMBINE_APPID'],
-            'type' => $type,
-            'account' => $account,
-            'relation_type' => $relation_type,
+        $url = 'https://api.mch.weixin.qq.com/v3/ecommerce/applyments/';
+        $fields = [
+            ['id_card_info', 'id_card_name'],
+            ['id_card_info', 'id_card_number'],
+            ['id_card_info', 'id_card_address'],
+            ['account_info', 'account_number'],
+            ['account_info', 'account_name'],
+            ['contact_info', 'contact_name'],
+            ['contact_info', 'contact_id_card_number'],
+            ['contact_info', 'mobile_phone'],
+            ['contact_info', 'contact_email'],
         ];
-        if ($type === 'MERCHANT_ID') {
-            $post['name'] = $name;
+        foreach ($fields as $fieldPath) {
+            if (isset($param[$fieldPath[0]][$fieldPath[1]]) && $param[$fieldPath[0]][$fieldPath[1]] !== '') {
+                $param[$fieldPath[0]][$fieldPath[1]] = Signs::getEncrypt($param[$fieldPath[0]][$fieldPath[1]]);
+            }
         }
-        if ($type === 'PERSONAL_OPENID') {
-            $post['encrypted_name'] = Signs::getEncrypt($name);
+
+        return Signs::_Postresponse($url, json_encode($param, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    }
+
+    public function getApplymentByid($applyment_id)
+    {
+        $url = 'https://api.mch.weixin.qq.com/v3/ecommerce/applyments/' . rawurlencode((string) $applyment_id);
+        $data = json_decode(Signs::_Getresponse($url), true);
+        if (is_array($data)) {
+            foreach (['account_name', 'account_no'] as $field) {
+                if (isset($data['account_validation'][$field])) {
+                    $data['account_validation'][$field] = Signs::getPrivateEncrypt($data['account_validation'][$field]);
+                }
+            }
         }
-
-        return Signs::_Postresponse($url, json_encode($post, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        return json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
 
-    public function delReceivers($type, $account)
+    public function getApplymentByno($out_request_no)
     {
-        $url = 'https://api.mch.weixin.qq.com/v3/ecommerce/profitsharing/receivers/delete';
-        $post = [
-            'appid' => Config::$config['COMBINE_APPID'],
-            'type' => $type,
-            'account' => $account,
+        $url = 'https://api.mch.weixin.qq.com/v3/ecommerce/applyments/out-request-no/' . rawurlencode((string) $out_request_no);
+        $data = json_decode(Signs::_Getresponse($url), true);
+        if (is_array($data)) {
+            foreach (['account_name', 'account_no'] as $field) {
+                if (isset($data['account_validation'][$field])) {
+                    $data['account_validation'][$field] = Signs::getPrivateEncrypt($data['account_validation'][$field]);
+                }
+            }
+        }
+        return json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    public function modifySettlement($param = [])
+    {
+        if (empty($param['sub_mchid']) || strlen((string) $param['sub_mchid']) < 8) {
+            throw new WxPayv3Exception('特约商户号:长度最小8个字节');
+        }
+        $url = 'https://api.mch.weixin.qq.com/v3/apply4sub/sub_merchants/' . rawurlencode((string) $param['sub_mchid']) . '/modify-settlement';
+        if (!empty($param['account_number'])) {
+            $param['account_number'] = Signs::getEncrypt($param['account_number']);
+        }
+        $data = [
+            'account_type' => $param['account_type'] ?? '',
+            'account_bank' => $param['account_bank'] ?? '',
+            'bank_address_code' => $param['bank_address_code'] ?? '',
+            'account_number' => $param['account_number'] ?? '',
         ];
-
-        return Signs::_Postresponse($url, json_encode($post, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        foreach (['bank_name', 'bank_branch_id'] as $optional) {
+            if (!empty($param[$optional])) {
+                $data[$optional] = $param[$optional];
+            }
+        }
+        return Signs::_Postresponse($url, json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     }
 
-    public function reqAccount($out_order_no, $transaction_id, $sub_mchid, $receivers, $finish = true)
+    public function getSettlement($sub_mchid)
     {
-        $url = 'https://api.mch.weixin.qq.com/v3/ecommerce/profitsharing/orders';
-        $post = [
-            'appid' => Config::$config['COMBINE_APPID'],
-            'out_order_no' => $out_order_no,
-            'transaction_id' => $transaction_id,
-            'sub_mchid' => strval($sub_mchid),
-            'receivers' => $receivers,
-            'finish' => $finish,
-        ];
-
-        return Signs::_Postresponse($url, json_encode($post, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-    }
-
-    public function findAccount($out_order_no, $transaction_id, $sub_mchid)
-    {
-        $url = 'https://api.mch.weixin.qq.com/v3/ecommerce/profitsharing/orders';
-        $url .= '?sub_mchid=' . urlencode((string) $sub_mchid) . '&transaction_id=' . urlencode((string) $transaction_id) . '&out_order_no=' . urlencode((string) $out_order_no);
-
+        if (strlen((string) $sub_mchid) < 8) {
+            throw new WxPayv3Exception('特约商户号:长度最小8个字节');
+        }
+        $url = 'https://api.mch.weixin.qq.com/v3/apply4sub/sub_merchants/' . rawurlencode((string) $sub_mchid) . '/settlement';
         return Signs::_Getresponse($url);
     }
 
-    public function finishAccount($out_order_no, $transaction_id, $sub_mchid, $description)
+    public function applymentTY($param = [])
     {
-        $url = 'https://api.mch.weixin.qq.com/v3/ecommerce/profitsharing/finish-order';
-        $post = [
-            'sub_mchid' => strval($sub_mchid),
-            'transaction_id' => $transaction_id,
-            'out_order_no' => $out_order_no,
-            'description' => $description ?: '分账完结',
+        $url = 'https://api.mch.weixin.qq.com/v3/applyment4sub/applyment/';
+        $paths = [
+            ['subject_info', 'identity_info', 'id_card_info', 'id_card_name'],
+            ['subject_info', 'identity_info', 'id_card_info', 'id_card_number'],
+            ['bank_account_info', 'account_name'],
+            ['bank_account_info', 'account_number'],
+            ['contact_info', 'contact_name'],
+            ['contact_info', 'contact_id_number'],
+            ['contact_info', 'openid'],
+            ['contact_info', 'mobile_phone'],
+            ['contact_info', 'contact_email'],
         ];
-
-        return Signs::_Postresponse($url, json_encode($post, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        foreach ($paths as $path) {
+            $value =& $param;
+            $exists = true;
+            foreach ($path as $key) {
+                if (!is_array($value) || !array_key_exists($key, $value)) {
+                    $exists = false;
+                    break;
+                }
+                $value =& $value[$key];
+            }
+            if ($exists && $value !== '') {
+                $value = Signs::getEncrypt($value);
+            }
+            unset($value);
+        }
+        return Signs::_Postresponse($url, json_encode($param, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     }
 
-    public function returnAccount($sub_mchid, $order_id, $out_order_no, $out_return_no, $return_mchid, $amount, $description)
+    public function getApplymentByidTY($applyment_id)
     {
-        $url = 'https://api.mch.weixin.qq.com/v3/ecommerce/profitsharing/returnorders';
-        $post = [
-            'sub_mchid' => $sub_mchid,
-            'order_id' => $order_id,
-            'out_order_no' => $out_order_no,
-            'out_return_no' => $out_return_no,
-            'return_mchid' => $return_mchid,
-            'amount' => (int) $amount,
-            'description' => $description,
-        ];
-
-        return Signs::_Postresponse($url, json_encode($post, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        $url = 'https://api.mch.weixin.qq.com/v3/applyment4sub/applyment/applyment_id/' . rawurlencode((string) $applyment_id);
+        return Signs::_Getresponse($url);
     }
 
-    public function findreturnAccount($sub_mchid, $order_id = '', $out_order_no = '', $out_return_no = '')
+    public function getApplymentBynoTY($business_code)
     {
-        $url = 'https://api.mch.weixin.qq.com/v3/ecommerce/profitsharing/returnorders';
-        $query = ['sub_mchid' => $sub_mchid];
-        if ($order_id !== '') {
-            $query['order_id'] = $order_id;
-        }
-        if ($out_order_no !== '') {
-            $query['out_order_no'] = $out_order_no;
-        }
-        if ($out_return_no !== '') {
-            $query['out_return_no'] = $out_return_no;
-        }
-        $url .= '?' . http_build_query($query);
+        $url = 'https://api.mch.weixin.qq.com/v3/applyment4sub/applyment/business_code/' . rawurlencode((string) $business_code);
+        return Signs::_Getresponse($url);
+    }
 
+    public function modifySettlementTY($post = [])
+    {
+        $subMchid = $post['sub_mchid'] ?? '';
+        if ($subMchid === '') {
+            throw new WxPayv3Exception('sub_mchid不能为空');
+        }
+        $url = 'https://api.mch.weixin.qq.com/v3/apply4sub/sub_merchants/' . rawurlencode((string) $subMchid) . '/modify-settlement';
+        $data = [
+            'account_type' => $post['account_type'] ?? '',
+            'account_bank' => $post['account_bank'] ?? '',
+            'bank_address_code' => $post['bank_address_code'] ?? '',
+            'bank_name' => $post['bank_name'] ?? '',
+        ];
+        if (isset($post['account_number']) && $post['account_number'] !== '') {
+            $data['account_number'] = Signs::getEncrypt($post['account_number']);
+        }
+        if (!empty($post['bank_branch_id'])) {
+            $data['bank_branch_id'] = $post['bank_branch_id'];
+        }
+        return Signs::_Postresponse($url, json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    }
+
+    public function findSettlementTY($sub_mchid)
+    {
+        $url = 'https://api.mch.weixin.qq.com/v3/apply4sub/sub_merchants/' . rawurlencode((string) $sub_mchid) . '/settlement';
         return Signs::_Getresponse($url);
     }
 }
