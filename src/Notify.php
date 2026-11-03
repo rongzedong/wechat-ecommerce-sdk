@@ -2,115 +2,97 @@
 
 namespace jiujiude\WechatEcommerce;
 
-//回调数据验证 验证签名 返回数据
+use WeChatPay\Crypto\Rsa;
+use WeChatPay\Formatter;
+
+/** Verify and decrypt WeChat Pay APIv3 webhook notifications. */
 class Notify
 {
-
-    /**
-     * 支付成功回调
-     * @param string jsonData 微信支付返回的数据 json字符串
-     * @param array headers 头部信息
-     */
     public function notifyPay($jsonData, $headers = [])
     {
-        if (!$jsonData) {
-            throw new WxPayv3Exception('数据为空');
-        }
-        //先写入日志
-        $data = json_decode($jsonData, true);
-        if ($data['event_type'] != 'TRANSACTION.SUCCESS') {
-            throw new WxPayv3Exception('通知的类型错误');
-        }
-        if ($data['resource_type'] != 'encrypt-resource') {
-            throw new WxPayv3Exception('通知的数据类型错误');
-        }
-        if (!$data['resource']) {
-            throw new WxPayv3Exception('数据错误');
-        }
-
-        try {
-            $ret = $this->Verify($jsonData, $headers);
-        } catch (WxPayv3Exception $th) {
-            throw $th;
-        }
-        if (!$ret) {
-            throw new WxPayv3Exception('验证签名失败');
-        }
-        //然后对回报结果部分数据进行解密
-        $resourceData = Signs::decryptToString($data['resource']['associated_data'], $data['resource']['nonce'], $data['resource']['ciphertext']);
-        return $resourceData; //返回回调数据 格式参考订单查询格式 类似
+        return $this->notify($jsonData, $headers, 'TRANSACTION.SUCCESS');
     }
 
-    /**
-     * 验签
-     * 3 构造验签名串 （http头部的Wechatpay-Timestamp，HTTP头Wechatpay-Nonce，返回的body）
-     * 4 3个都已 \n 结尾，
-     * 获取应答签名 HTTP头Wechatpay-Signature 然后使用base64_decode 解码得到应答签名
-     * @param string body 签名主体
-     * @param array headers 头部信息
-     */
-    public function Verify($body, $headers)
-    {
-        $serial_no = Cert::certificates();
-        $mch_public_key = Signs::getCertificate(Config::$config['PLATFORM_CERT_PATH']); //获取平台的公钥
-        $head_serial_no = $headers['HTTP_WECHATPAY_SERIAL'];
-        if ($serial_no != $head_serial_no) {
-            throw new WxPayv3Exception("回调请求证书序列化不一致");
-        }
-        $timestamp = $headers['HTTP_WECHATPAY_TIMESTAMP'];
-        $nonce = $headers['HTTP_WECHATPAY_NONCE'];
-        $signature = $headers['HTTP_WECHATPAY_SIGNATURE'];
-        $str = $timestamp . "\n" . $nonce . "\n" . ($body ? $body . "\n" : ''); //验签名串
-        $signature = base64_decode($signature); //应答签名
-        $value = openssl_verify($str, $signature, $mch_public_key, 'sha256WithRSAEncryption');
-        if ($value == 1) {
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * 退款通知回调
-     * @param string jsonData 退款通知返回的信息 json字符串
-     * @param array headers 头部信息
-     */
     public function notifyRefund($jsonData, $headers = [])
     {
-        if (!$jsonData) {
+        return $this->notify($jsonData, $headers, 'REFUND.SUCCESS');
+    }
+
+    private function notify($jsonData, $headers, $eventType)
+    {
+        if (!is_string($jsonData) || $jsonData === '') {
             throw new WxPayv3Exception('数据为空');
         }
-        //先写入日志
         $data = json_decode($jsonData, true);
-        if ($data['event_type'] != 'REFUND.SUCCESS') {
+        if (!is_array($data) || json_last_error() !== JSON_ERROR_NONE) {
+            throw new WxPayv3Exception('通知JSON格式错误');
+        }
+        if (($data['event_type'] ?? null) !== $eventType) {
             throw new WxPayv3Exception('通知的类型错误');
         }
-        if ($data['resource_type'] != 'encrypt-resource') {
+        if (($data['resource_type'] ?? null) !== 'encrypt-resource' || empty($data['resource']) || !is_array($data['resource'])) {
             throw new WxPayv3Exception('通知的数据类型错误');
         }
-        if (!$data['resource']) {
-            throw new WxPayv3Exception('数据错误');
-        }
-
-        try {
-            $ret = $this->Verify($jsonData, $headers);
-        } catch (WxPayv3Exception $th) {
-            throw $th;
-        }
-        if (!$ret) {
+        if (!$this->Verify($jsonData, $headers)) {
             throw new WxPayv3Exception('验证签名失败');
         }
-        //然后对回报结果部分数据进行解密
-        $resourceData = Signs::decryptToString($data['resource']['associated_data'], $data['resource']['nonce'], $data['resource']['ciphertext']);
-        return $resourceData; //返回回调数据 格式参考订单查询格式 类似
+        $resource = $data['resource'];
+        foreach (['associated_data', 'nonce', 'ciphertext'] as $field) {
+            if (!isset($resource[$field])) {
+                throw new WxPayv3Exception('通知资源缺少字段：' . $field);
+            }
+        }
+        return Signs::decryptToString($resource['associated_data'], $resource['nonce'], $resource['ciphertext']);
     }
 
     /**
-     * 获取请求头部headers信息 返回数组
+     * Verify the exact raw notification body and reject stale/replayed timestamps.
+     * Both PHP $_SERVER names and canonical HTTP header names are accepted.
      */
-    function em_getallheaders()
+    public function Verify($body, $headers = [])
     {
+        $headers = $this->normalizeHeaders($headers);
+        $timestamp = $headers['wechatpay-timestamp'] ?? '';
+        $nonce = $headers['wechatpay-nonce'] ?? '';
+        $signature = $headers['wechatpay-signature'] ?? '';
+        $serial = $headers['wechatpay-serial'] ?? '';
+        if ($timestamp === '' || $nonce === '' || $signature === '' || $serial === '') {
+            throw new WxPayv3Exception('回调请求缺少微信支付验签头');
+        }
+        if (!ctype_digit((string) $timestamp) || abs(time() - (int) $timestamp) > 300) {
+            throw new WxPayv3Exception('回调时间戳无效或已过期');
+        }
+        $certificate = Cert::certificateForSerial($serial);
+        $message = Formatter::response((string) $timestamp, $nonce, (string) $body);
+        try {
+            return Rsa::verify($message, $signature, $certificate);
+        } catch (\Throwable $exception) {
+            throw new WxPayv3Exception('回调签名验证异常：' . $exception->getMessage());
+        }
+    }
+
+    private function normalizeHeaders($headers)
+    {
+        $normalized = [];
+        foreach ((array) $headers as $name => $value) {
+            $name = strtolower(str_replace('_', '-', preg_replace('/^HTTP_/i', '', (string) $name)));
+            $normalized[$name] = is_array($value) ? (string) reset($value) : (string) $value;
+        }
+        return $normalized;
+    }
+
+    /** Return request headers in canonical names. */
+    public function em_getallheaders()
+    {
+        if (function_exists('getallheaders')) {
+            $headers = getallheaders();
+            if (is_array($headers)) {
+                return $headers;
+            }
+        }
+        $headers = [];
         foreach ($_SERVER as $name => $value) {
-            if (substr($name, 0, 5) == 'HTTP_') {
+            if (strpos($name, 'HTTP_') === 0) {
                 $headers[str_replace(' ', '-', ucwords(strtolower(str_replace('_', ' ', substr($name, 5)))))] = $value;
             }
         }

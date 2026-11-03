@@ -2,32 +2,21 @@
 
 namespace jiujiude\WechatEcommerce;
 
-/**
- * 配置信息
- */
+/** Platform certificate and request configuration. */
 class Config
 {
     public static $config = [];
 
-    /**
-     * 获取配置
-     * @return array
-     * @author hgq <393210556@qq.com>.
-     * @date: 2021/10/28 13:48
-     */
     public static function getConfig()
     {
         return self::$config;
     }
 
-    /**
-     * 外部设置配置
-     * @param array $config
-     * @author hgq <393210556@qq.com>.
-     * @date: 2021/10/28 13:44
-     */
     public static function setConfig($config = [])
     {
+        if (!is_array($config)) {
+            throw new WxPayv3Exception('配置必须为数组');
+        }
         self::$config = $config;
     }
 
