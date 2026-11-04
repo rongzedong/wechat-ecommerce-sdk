@@ -41,9 +41,10 @@ class Signs
      *
      * @param string|array $url  请求 URL（参数保留为兼容现有调用方式）。
      * @param string|array $body 请求正文；数组会编码为 JSON。
+     * @param array $extraHeaders 需要附加的 HTTP 请求头（名称 => 值）。
      * @return string 微信支付接口返回的响应内容。
      */
-    public static function _Postresponse($url, $body)
+    public static function _Postresponse($url, $body, $extraHeaders = [])
     {
         if (is_array($body)) {
             // 保留中文和斜杠，生成与实际发送内容一致的签名报文。
@@ -63,6 +64,11 @@ class Signs
             'Content-Type: application/json',
             'Authorization: WECHATPAY2-SHA256-RSA2048 ' . $authorization,
         ];
+        foreach ($extraHeaders as $name => $value) {
+            if ((string) $value !== '') {
+                $headers[] = $name . ': ' . $value;
+            }
+        }
 
         return self::_requestPost($url, $body, $headers);
     }
@@ -161,7 +167,7 @@ class Signs
         // 按 APIv3 规范，签名 URI 由路径及（如有）查询字符串组成。
         $uri = $parts['path'] . (isset($parts['query']) && $parts['query'] !== '' ? '?' . $parts['query'] : '');
         $method = strtoupper($http_method);
-        // 按微信支付请求签名格式拼接待签名内容；GET 请求正文为空。
+        // 按 APIv3 规范拼接待签名内容；GET 请求正文为空。
         $message = Formatter::request($method, $uri, (string) $timestamp, $nonce, $method === 'GET' ? '' : (string) $body);
         $privateKey = self::getPrivateKey(Config::$config['SSLKEY_PATH']);
         $authorization = Formatter::authorization(
@@ -267,17 +273,24 @@ class Signs
     }
 
     /**
-     * 使用当前平台证书的公钥加密 APIv3 敏感信息。
+     * 使用配置的微信支付公钥加密 APIv3 敏感信息。
      *
      * @param string $str 待加密的敏感信息。
      * @return string 加密后由密码学组件返回的密文。
      */
     public static function getEncrypt($str)
     {
-        // 确保平台证书已准备好，再读取配置中的平台证书公钥。
-        Cert::certificates();
-        $path = Config::$config['PLATFORM_CERT_PATH'];
-        return Rsa::encrypt($str, Rsa::from('file://' . $path, Rsa::KEY_TYPE_PUBLIC));
+        $path = Config::$config['PLATFORM_PUBLIC_KEY_PATH'] ?? '';
+        $publicKeyId = Config::$config['PLATFORM_PUBLIC_KEY_ID'] ?? '';
+        if ($path === '' || $publicKeyId === '') {
+            throw new WxPayv3Exception('请配置微信支付公钥 ID 和公钥文件路径');
+        }
+        $keyPath = strpos($path, '://') === false ? 'file://' . $path : $path;
+        try {
+            return Rsa::encrypt($str, Rsa::from($keyPath, Rsa::KEY_TYPE_PUBLIC));
+        } catch (\\Throwable $exception) {
+            throw new WxPayv3Exception('加载微信支付公钥或加密敏感信息失败：' . $exception->getMessage());
+        }
     }
 
     /**
@@ -309,7 +322,7 @@ class Signs
         }
         try {
             return AesGcm::decrypt($ciphertext, $aesKey, $nonce, $associatedData);
-        } catch (\Throwable $exception) {
+        } catch (\\Throwable $exception) {
             // 将底层解密错误包装为 SDK 异常，保留原始错误信息便于排查。
             throw new WxPayv3Exception('APIv3 AES-GCM解密失败：' . $exception->getMessage());
         }

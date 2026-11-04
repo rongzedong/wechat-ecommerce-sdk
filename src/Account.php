@@ -25,15 +25,19 @@ class Account
             'account' => $account,
             'relation_type' => $relation_type,
         ];
+        $headers = [];
         if ($type === 'MERCHANT_ID') {
             $post['name'] = $name;
         } elseif ($type === 'PERSONAL_OPENID') {
             $post['encrypted_name'] = Signs::getEncrypt($name);
+            // 公钥模式要求请求携带对应的微信支付公钥 ID。
+            $headers['Wechatpay-Serial'] = Config::$config['PLATFORM_PUBLIC_KEY_ID'] ?? '';
         }
 
         return Signs::_Postresponse(
             'https://api.mch.weixin.qq.com/v3/ecommerce/profitsharing/receivers/add',
-            json_encode($post, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+            json_encode($post, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            $headers
         );
     }
 

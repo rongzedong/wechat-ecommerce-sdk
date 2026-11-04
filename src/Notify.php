@@ -5,14 +5,6 @@ namespace jiujiude\WechatEcommerce;
 use WeChatPay\Crypto\Rsa;
 use WeChatPay\Formatter;
 
-/** 验证并解密微信支付 APIv3 回调通知。 */
-class Notify
-{
-    /**
-     * 处理支付成功通知。
-     * @param string $jsonData 通知原始 JSON 字符串
-     * @param array $headers HTTP 头信息
-     * @return string 解密后的资源对象内容
 /**
  * 验证并解密微信支付 APIv3 回调通知。
  * 处理支付成功通知、退款成功通知等加密回调消息，并在校验签名后解密资源内容。
@@ -31,10 +23,6 @@ class Notify
     }
 
     /**
-     * 处理退款成功通知。
-     * @param string $jsonData 通知原始 JSON 字符串
-     * @param array $headers HTTP 头信息
-     * @return string 解密后的资源对象内容
      * 处理退款成功回调通知。
      * @param string $jsonData 原始回调通知 JSON 字符串
      * @param array $headers HTTP 请求头信息
@@ -46,15 +34,11 @@ class Notify
     }
 
     /**
-     * 统一处理支付/退款通知，校验签名并��密资源字段。
-     * @param string $jsonData 通知原始 JSON 字符串
-     * @param array $headers HTTP 头信息
-     * @param string $eventType 期望的通知事件类型
-     * 通用回调处理入口，校验通知类型、签名及加密字段，并解密资源内容。
+     * 统一处理支付/退款通知，校验通知类型、签名及加密字段，并解密资源字段。
      * @param string $jsonData 原始回调通知 JSON 字符串
      * @param array $headers HTTP 请求头信息
      * @param string $eventType 期望事件类型（如 TRANSACTION.SUCCESS / REFUND.SUCCESS）
-     * @return string 解密后的资源内容
+     * @return string 解密后的通知资源内容
      */
     private function notify($jsonData, $headers, $eventType)
     {
@@ -84,13 +68,8 @@ class Notify
     }
 
     /**
-     * 验证回调签名，确保签名、时间戳和证书序列号均匹配。
-     * 允许同时处理 PHP $_SERVER 头和标准 HTTP 头名称。
-     * @param string $body 原始回调请求体
-     * @param array $headers HTTP 头信息
-     * @return bool 是否校验通过
-     * 验证微信支付回调签名，确保通知未被篡改、时间戳有效且使用正确平台证书。
-     * 同时兼容 PHP $_SERVER 风格头部名和标准 HTTP 头部名。
+     * 验证回调签名，确保签名、时间戳和微信支付公钥 ID 均匹配。
+     * 使用配置的微信支付公钥，不下载或缓存平台证书。
      * @param string $body 原始回调请求体
      * @param array $headers HTTP 请求头信息
      * @return bool 签名校验是否通过
@@ -108,26 +87,36 @@ class Notify
         if (!ctype_digit((string) $timestamp) || abs(time() - (int) $timestamp) > 300) {
             throw new WxPayv3Exception('回调时间戳无效或已过期');
         }
-        $certificate = Cert::certificateForSerial($serial);
-        $message = Formatter::response((string) $timestamp, $nonce, (string) $body);
+
+        $publicKeyId = Config::$config['PLATFORM_PUBLIC_KEY_ID'] ?? '';
+        $publicKeyPath = Config::$config['PLATFORM_PUBLIC_KEY_PATH'] ?? '';
+        if ($publicKeyId === '' || $publicKeyPath === '') {
+            throw new WxPayv3Exception('请配置微信支付公钥 ID 和公钥文件路径');
+        }
+        if (!hash_equals((string) $publicKeyId, (string) $serial)) {
+            throw new WxPayv3Exception('回调微信支付公钥 ID 与配置不匹配');
+        }
+
+        $keyPath = strpos($publicKeyPath, '://') === false ? 'file://' . $publicKeyPath : $publicKeyPath;
         try {
-            return Rsa::verify($message, $signature, $certificate);
+            $publicKey = Rsa::from($keyPath, Rsa::KEY_TYPE_PUBLIC);
+            $message = Formatter::response((string) $timestamp, $nonce, (string) $body);
+            return Rsa::verify($message, $signature, $publicKey);
         } catch (\Throwable $exception) {
             throw new WxPayv3Exception('回调签名验证异常：' . $exception->getMessage());
         }
     }
 
     /**
-     * 标准化头信息名称，兼容 PHP $_SERVER 和标准头名称。
-     * 标准化回调头信息，兼容 PHP 的 $_SERVER 头名和标准 HTTP 头名。
+     * 标准化头信息名称，兼容 PHP $_SERVER 和标准 HTTP 头名称。
      * @param array $headers 原始头信息
      * @return array 标准化后的头信息
      */
     private function normalizeHeaders($headers)
     {
         $normalized = [];
-        foreach ((array) $headers as $value) {
-            $name = strtolower(str_replace('_', '-', preg_replace('/^HTTP_/i', '', (string) $value)));
+        foreach ((array) $headers as $name => $value) {
+            $name = strtolower(str_replace('_', '-', preg_replace('/^HTTP_/i', '', (string) $name)));
             $normalized[$name] = is_array($value) ? (string) reset($value) : (string) $value;
         }
         return $normalized;
