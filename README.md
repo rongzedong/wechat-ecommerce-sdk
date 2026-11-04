@@ -1,6 +1,6 @@
 # wechat-ecommerce-sdk
 
-_PHP微信支付电商收付通V3版本SDK_
+_PHP微信支付电商收付通V3版本SDK_ 
 
 ### 安装方法
 > #### composer require jiujiude/wechat-ecommerce-sdk
@@ -44,3 +44,7 @@ _PHP微信支付电商收付通V3版本SDK_
 
 #### src/WxPayv3Exception.php
 > ##### 异常接收
+
+> ### 最新更新
+2026-11-03 更新升级符合 V3 API的要求（未测试）
+
